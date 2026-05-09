@@ -1,35 +1,81 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { SectionShell } from "@/components/shell/section-shell";
-import { SECTIONS } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Image as ImageIcon } from "lucide-react";
-import { motion } from "framer-motion";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey } from "@solana/web3.js";
+import { shortenAddress } from "@/lib/utils";
 
-const COLLECTIONS = [
-  { name: "Mad Lads", floor: 142, count: 2, color: "from-fuchsia-500/40 to-purple-500/20" },
-  { name: "DeGods", floor: 28, count: 1, color: "from-amber-500/40 to-orange-500/20" },
-  { name: "Solana Monkey Business", floor: 64, count: 1, color: "from-emerald-500/40 to-teal-500/20" },
-  { name: "Tensorians", floor: 4.6, count: 3, color: "from-sky-500/40 to-indigo-500/20" },
-  { name: "y00ts (Sol)", floor: 12.3, count: 1, color: "from-rose-500/40 to-pink-500/20" },
-  { name: "Famous Fox Federation", floor: 9.8, count: 5, color: "from-violet-500/40 to-purple-500/20" },
-];
+interface NftAccount {
+  mint: string;
+  owner: string;
+}
+
+const TOKEN_PROGRAM_ID = new PublicKey(
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+);
 
 export default function NftOverviewPage() {
-  const section = SECTIONS.find((s) => s.href === "/portfolio")!;
-  const totalCount = useMemo(() => COLLECTIONS.reduce((s, c) => s + c.count, 0), []);
-  const totalValue = useMemo(
-    () => COLLECTIONS.reduce((s, c) => s + c.count * c.floor, 0),
-    []
-  );
+  const { connection } = useConnection();
+  const { publicKey, connected } = useWallet();
+  const [nfts, setNfts] = useState<NftAccount[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!publicKey || !connected) {
+      setNfts([]);
+      return;
+    }
+    let cancelled = false;
+    const owner = publicKey;
+    setLoading(true);
+    setError(null);
+
+    type ParsedTokenInfo = {
+      mint: string;
+      tokenAmount: { uiAmount: number | null; decimals: number };
+    };
+    type ParsedAccountData = {
+      parsed: { info: ParsedTokenInfo };
+    };
+
+    connection
+      .getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID })
+      .then((res) => {
+        const items: NftAccount[] = [];
+        for (const acc of res.value) {
+          const data = acc.account.data as unknown as ParsedAccountData;
+          const info = data?.parsed?.info;
+          if (!info) continue;
+          if (info.tokenAmount.decimals === 0 && (info.tokenAmount.uiAmount ?? 0) === 1) {
+            items.push({ mint: info.mint, owner: owner.toString() });
+          }
+        }
+        if (!cancelled) setNfts(items);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey, connected, connection]);
 
   return (
     <SectionShell
       title="NFT Overview"
-      description="A quick snapshot of NFTs across your tracked wallets. (Mock data)"
-      badge={`${totalCount} NFTs`}
+      description="On-chain NFT-like SPL accounts for the connected wallet (decimals = 0, amount = 1)."
+      badge={
+        !connected ? "Connect wallet" : loading ? "Loading" : `${nfts.length} NFTs`
+      }
       baseHref="/portfolio"
     >
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
@@ -38,45 +84,72 @@ export default function NftOverviewPage() {
             <CardTitle className="flex items-center gap-2">
               <ImageIcon className="size-4 text-primary" /> Summary
             </CardTitle>
+            <CardDescription>
+              {connected
+                ? "Live · Solana RPC scan of your token accounts."
+                : "Connect a wallet to view your NFTs."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Mini label="Total NFTs" value={String(totalCount)} />
-            <Mini label="Floor value" value={`${totalValue.toFixed(2)} SOL`} />
-            <Mini label="Collections" value={String(COLLECTIONS.length)} />
-            <Mini label="Top collection" value={COLLECTIONS[0].name} />
+            <Mini label="Total NFTs" value={connected ? String(nfts.length) : "—"} />
+            <Mini
+              label="Wallet"
+              value={publicKey ? shortenAddress(publicKey.toString(), 4) : "—"}
+            />
+            <Mini label="Source" value="getParsedTokenAccountsByOwner" />
           </CardContent>
         </Card>
         <Card className="lg:col-span-3">
           <CardHeader>
-            <CardTitle>Collections</CardTitle>
-            <CardDescription>Floor values are mock. No NFT calls made.</CardDescription>
+            <CardTitle>NFT mints</CardTitle>
+            <CardDescription>
+              {error
+                ? `Error: ${error}`
+                : connected
+                  ? "Tap a mint to open it on Solscan."
+                  : "Wallet not connected."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {COLLECTIONS.map((c, i) => (
-                <motion.div
-                  key={c.name}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: i * 0.05 }}
-                  className="rounded-xl border border-white/[0.06] overflow-hidden"
-                >
-                  <div className={`relative aspect-[4/3] bg-gradient-to-br ${c.color}`}>
-                    <div className="absolute inset-0 grid-pattern opacity-20" />
-                    <div className="absolute bottom-2 left-2">
-                      <Badge variant="secondary" className="text-[9px]">
-                        {c.count} held
-                      </Badge>
+            {loading && nfts.length === 0 ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-xl" />
+                ))}
+              </div>
+            ) : !connected ? (
+              <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.01] py-10 text-center text-sm text-muted-foreground">
+                Connect a wallet to load your NFTs.
+              </div>
+            ) : nfts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-white/10 bg-white/[0.01] py-10 text-center text-sm text-muted-foreground">
+                No NFT-like SPL accounts found.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {nfts.slice(0, 60).map((n) => (
+                  <a
+                    key={n.mint}
+                    href={`https://solscan.io/token/${n.mint}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-xl border border-white/[0.06] overflow-hidden hover:border-white/20 transition-colors"
+                  >
+                    <div className="relative aspect-[4/3] bg-gradient-to-br from-fuchsia-500/30 to-sky-500/20">
+                      <div className="absolute inset-0 grid-pattern opacity-20" />
                     </div>
-                  </div>
-                  <div className="p-3">
-                    <div className="text-xs font-medium truncate">{c.name}</div>
-                    <div className="text-[10px] text-muted-foreground">Floor {c.floor} SOL</div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
+                    <div className="p-3">
+                      <div className="text-xs font-mono truncate">
+                        {shortenAddress(n.mint, 6)}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        Solscan ↗
+                      </div>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

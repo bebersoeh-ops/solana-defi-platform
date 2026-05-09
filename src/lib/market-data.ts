@@ -1,6 +1,6 @@
 "use client";
 
-import { JUPITER_API_BASE } from "./constants";
+import { JUPITER_API_BASE, SOLANA_RPC } from "./constants";
 
 /**
  * Free, public market-data clients used across the app.
@@ -247,4 +247,283 @@ export function syntheticSparkline(
     out.push(Math.max(0, v * (1 + noise)));
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Extended DexScreener helpers                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Returns all Solana pairs for a given base mint, sorted by liquidity desc.
+ * Used by holder distribution, whale activity, and rug-risk surfaces.
+ */
+export async function fetchDexScreenerPairsByMint(
+  mint: string,
+  signal?: AbortSignal,
+): Promise<DexScreenerPair[]> {
+  const url = `${DEXSCREENER_BASE}/tokens/${mint}`;
+  const res = await fetch(url, { signal, cache: "no-store" });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { pairs?: DexScreenerPair[] | null };
+  const pairs = (json.pairs ?? []).filter(
+    (p) => p.chainId === "solana" && p.baseToken.address === mint,
+  );
+  pairs.sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0));
+  return pairs;
+}
+
+export interface DexAggregate {
+  dexId: string;
+  volume24h: number;
+  liquidity: number;
+  pairCount: number;
+}
+
+/**
+ * Group pairs by DEX (raydium / orca / phoenix / meteora / lifinity / …).
+ * Used by the Volume Tracker page and routing widgets.
+ */
+export function aggregateByDex(pairs: DexScreenerPair[]): DexAggregate[] {
+  const map = new Map<string, DexAggregate>();
+  for (const p of pairs) {
+    const dex = p.dexId || "unknown";
+    const cur = map.get(dex) ?? {
+      dexId: dex,
+      volume24h: 0,
+      liquidity: 0,
+      pairCount: 0,
+    };
+    cur.volume24h += p.volume?.h24 ?? 0;
+    cur.liquidity += p.liquidity?.usd ?? 0;
+    cur.pairCount += 1;
+    map.set(dex, cur);
+  }
+  return [...map.values()].sort((a, b) => b.volume24h - a.volume24h);
+}
+
+/**
+ * Convenience: fetch many mints, return the FULL flat pair list (instead
+ * of one-pair-per-mint). Used for ecosystem heatmap + DEX share aggregation.
+ */
+export async function fetchAllPairsForMints(
+  mints: string[],
+  signal?: AbortSignal,
+): Promise<DexScreenerPair[]> {
+  if (mints.length === 0) return [];
+  const chunks: string[][] = [];
+  for (let i = 0; i < mints.length; i += 30) chunks.push(mints.slice(i, i + 30));
+
+  const all: DexScreenerPair[] = [];
+  await Promise.all(
+    chunks.map(async (chunk) => {
+      const url = `${DEXSCREENER_BASE}/tokens/${chunk.join(",")}`;
+      const res = await fetch(url, { signal, cache: "no-store" });
+      if (!res.ok) return;
+      const json = (await res.json()) as { pairs?: DexScreenerPair[] | null };
+      for (const p of json.pairs ?? []) {
+        if (p.chainId === "solana") all.push(p);
+      }
+    }),
+  );
+  return all;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Solana RPC                                                          */
+/* ------------------------------------------------------------------ */
+
+interface RpcResp<T> {
+  jsonrpc: "2.0";
+  id: number;
+  result: T;
+  error?: { code: number; message: string };
+}
+
+let RPC_ID = 0;
+
+async function rpc<T>(
+  method: string,
+  params: unknown[],
+  signal?: AbortSignal,
+): Promise<T | null> {
+  RPC_ID += 1;
+  const res = await fetch(SOLANA_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: RPC_ID,
+      method,
+      params,
+    }),
+    signal,
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as RpcResp<T>;
+  if (json.error) return null;
+  return json.result ?? null;
+}
+
+export interface AccountSnapshot {
+  exists: boolean;
+  lamports: number;
+  owner: string;
+  executable: boolean;
+  rentEpoch: number;
+  dataLen: number;
+}
+
+export async function fetchAccountSnapshot(
+  address: string,
+  signal?: AbortSignal,
+): Promise<AccountSnapshot | null> {
+  const result = await rpc<{
+    value:
+      | {
+          lamports: number;
+          owner: string;
+          executable: boolean;
+          rentEpoch: number;
+          data: [string, string];
+        }
+      | null;
+  }>("getAccountInfo", [address, { encoding: "base64" }], signal);
+  if (!result) return null;
+  const v = result.value;
+  if (!v) {
+    return {
+      exists: false,
+      lamports: 0,
+      owner: "",
+      executable: false,
+      rentEpoch: 0,
+      dataLen: 0,
+    };
+  }
+  let dataLen = 0;
+  if (Array.isArray(v.data) && typeof v.data[0] === "string") {
+    try {
+      dataLen = atob(v.data[0]).length;
+    } catch {
+      dataLen = 0;
+    }
+  }
+  return {
+    exists: true,
+    lamports: v.lamports,
+    owner: v.owner,
+    executable: v.executable,
+    rentEpoch: v.rentEpoch,
+    dataLen,
+  };
+}
+
+export interface MintInfo {
+  decimals: number;
+  supply: string;
+  mintAuthority: string | null;
+  freezeAuthority: string | null;
+  isInitialized: boolean;
+}
+
+export async function fetchMintInfo(
+  mint: string,
+  signal?: AbortSignal,
+): Promise<MintInfo | null> {
+  type ParsedMint = {
+    value: {
+      data: {
+        parsed: {
+          info: {
+            decimals: number;
+            supply: string;
+            mintAuthority: string | null;
+            freezeAuthority: string | null;
+            isInitialized: boolean;
+          };
+          type: string;
+        };
+      };
+    } | null;
+  };
+  const result = await rpc<ParsedMint>(
+    "getAccountInfo",
+    [mint, { encoding: "jsonParsed" }],
+    signal,
+  );
+  if (!result?.value) return null;
+  const info = result.value.data.parsed.info;
+  return {
+    decimals: info.decimals,
+    supply: info.supply,
+    mintAuthority: info.mintAuthority,
+    freezeAuthority: info.freezeAuthority,
+    isInitialized: info.isInitialized,
+  };
+}
+
+export interface RpcSignature {
+  signature: string;
+  slot: number;
+  err: unknown | null;
+  blockTime: number | null;
+  memo?: string | null;
+}
+
+export async function fetchSignaturesForAddress(
+  address: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<RpcSignature[]> {
+  const result = await rpc<RpcSignature[]>(
+    "getSignaturesForAddress",
+    [address, { limit }],
+    signal,
+  );
+  return result ?? [];
+}
+
+export interface TokenLargestAccount {
+  address: string;
+  amount: string;
+  decimals: number;
+  uiAmount: number;
+}
+
+export async function fetchTokenLargestAccounts(
+  mint: string,
+  signal?: AbortSignal,
+): Promise<TokenLargestAccount[]> {
+  type Resp = {
+    value: Array<{
+      address: string;
+      amount: string;
+      decimals: number;
+      uiAmount: number | null;
+    }>;
+  };
+  const result = await rpc<Resp>("getTokenLargestAccounts", [mint], signal);
+  if (!result?.value) return [];
+  return result.value.map((v) => ({
+    address: v.address,
+    amount: v.amount,
+    decimals: v.decimals,
+    uiAmount: v.uiAmount ?? 0,
+  }));
+}
+
+export async function fetchTokenSupply(
+  mint: string,
+  signal?: AbortSignal,
+): Promise<{ uiAmount: number; decimals: number } | null> {
+  type Resp = {
+    value: { amount: string; decimals: number; uiAmount: number | null };
+  };
+  const result = await rpc<Resp>("getTokenSupply", [mint], signal);
+  if (!result?.value) return null;
+  return {
+    uiAmount: result.value.uiAmount ?? 0,
+    decimals: result.value.decimals,
+  };
 }

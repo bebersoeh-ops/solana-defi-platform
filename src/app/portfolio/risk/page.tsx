@@ -2,19 +2,29 @@
 
 import { useMemo } from "react";
 import { SectionShell } from "@/components/shell/section-shell";
-import { SECTIONS } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ShieldAlert, AlertTriangle, ChartBar } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { getMockPortfolioAssets } from "@/lib/mock-data";
+import { useWalletTokens } from "@/hooks/use-wallet-tokens";
 import { formatUsd } from "@/lib/utils";
 
 export default function RiskPage() {
-  const section = SECTIONS.find((s) => s.href === "/portfolio")!;
-  const assets = useMemo(() => getMockPortfolioAssets(), []);
+  const wallet = useWalletTokens();
+  const assets = useMemo(
+    () =>
+      wallet.isConnected && wallet.assets.length > 0
+        ? wallet.assets
+        : getMockPortfolioAssets(),
+    [wallet.isConnected, wallet.assets],
+  );
   const total = assets.reduce((s, a) => s + a.value, 0);
-  const top1 = assets[0]?.allocation ?? 0;
-  const top3 = assets.slice(0, 3).reduce((s, a) => s + a.allocation, 0);
+  const sorted = useMemo(
+    () => [...assets].sort((a, b) => b.allocation - a.allocation),
+    [assets],
+  );
+  const top1 = sorted[0]?.allocation ?? 0;
+  const top3 = sorted.slice(0, 3).reduce((s, a) => s + a.allocation, 0);
   const stables = assets
     .filter((a) => a.symbol === "USDC" || a.symbol === "USDT")
     .reduce((s, a) => s + a.allocation, 0);
@@ -27,7 +37,7 @@ export default function RiskPage() {
     <SectionShell
       title="Risk Monitor"
       description="Concentration, volatility, and drawdown signals across your portfolio."
-      badge="Alpha"
+      badge={wallet.isConnected ? "Live" : "Demo"}
       baseHref="/portfolio"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
