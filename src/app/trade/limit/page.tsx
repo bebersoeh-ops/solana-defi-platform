@@ -35,7 +35,7 @@ export default function LimitPreviewPage() {
     <SectionShell
       title="Limit Preview"
       description="Plan limit-style orders against Jupiter routes. (Demo preview — execution simulated.)"
-      badge="Preview"
+      badge="Demo · preview"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

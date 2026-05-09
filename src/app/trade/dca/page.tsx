@@ -39,7 +39,7 @@ export default function DcaPage() {
     <SectionShell
       title="DCA Simulator"
       description="Plan a dollar-cost-average strategy and project outcomes against simulated market conditions."
-      badge="Simulation"
+      badge="Demo · simulation"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

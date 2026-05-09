@@ -527,3 +527,58 @@ export async function fetchTokenSupply(
     decimals: result.value.decimals,
   };
 }
+
+export interface ParsedTokenAccount {
+  address: string;
+  owner: string;
+  mint: string;
+  uiAmount: number;
+}
+
+/**
+ * Resolve the wallet owner for a list of token-account addresses using a
+ * single `getMultipleAccounts` RPC call. Returns null entries for accounts
+ * that don't exist or aren't SPL token accounts.
+ */
+export async function fetchTokenAccountOwners(
+  addresses: string[],
+  signal?: AbortSignal,
+): Promise<Array<ParsedTokenAccount | null>> {
+  if (addresses.length === 0) return [];
+  type Resp = {
+    value: Array<
+      | {
+          owner: string;
+          data: {
+            parsed?: {
+              info?: {
+                owner?: string;
+                mint?: string;
+                tokenAmount?: { uiAmount: number | null };
+              };
+              type?: string;
+            };
+            program?: string;
+          };
+        }
+      | null
+    >;
+  };
+  const result = await rpc<Resp>(
+    "getMultipleAccounts",
+    [addresses, { encoding: "jsonParsed" }],
+    signal,
+  );
+  if (!result?.value) return addresses.map(() => null);
+  return result.value.map((entry, i) => {
+    if (!entry) return null;
+    const parsed = entry.data.parsed?.info;
+    if (!parsed?.owner || !parsed.mint) return null;
+    return {
+      address: addresses[i],
+      owner: parsed.owner,
+      mint: parsed.mint,
+      uiAmount: parsed.tokenAmount?.uiAmount ?? 0,
+    };
+  });
+}

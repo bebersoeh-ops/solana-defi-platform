@@ -38,7 +38,7 @@ export default function UsersDashboardPage() {
     <SectionShell
       title="User Activity"
       description="Cohort retention and top users."
-      badge="30d"
+      badge="Demo · sample cohort"
       baseHref="/dashboard"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

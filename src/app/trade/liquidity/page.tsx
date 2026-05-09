@@ -36,7 +36,7 @@ export default function LiquidityVizPage() {
     <SectionShell
       title="Liquidity Visualizer"
       description="Visualize concentrated liquidity across price ranges and the AMM mix routing your trade."
-      badge="SOL/USDC"
+      badge="Demo · SOL/USDC"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
