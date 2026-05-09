@@ -12,7 +12,8 @@ import {
   Zap,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useWallet } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { VersionedTransaction } from "@solana/web3.js";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,7 +23,11 @@ import { useUiStore } from "@/store/ui-store";
 import { findToken } from "@/lib/tokens";
 import { TokenSelect } from "./token-select";
 import { useJupiterQuote } from "@/hooks/use-jupiter-quote";
-import { calcMinimumOutput, calcOutputAmount } from "@/lib/jupiter";
+import {
+  buildSwapTransaction,
+  calcMinimumOutput,
+  calcOutputAmount,
+} from "@/lib/jupiter";
 import { useDebounced } from "@/hooks/use-debounced";
 import { cn, formatNumber, generateId } from "@/lib/utils";
 import { SwapSettingsPanel } from "./swap-settings";
@@ -47,7 +52,8 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
   const updateHistory = useSwapStore((s) => s.updateHistory);
   const pushNotification = useUiStore((s) => s.pushNotification);
 
-  const { connected, publicKey } = useWallet();
+  const { connected, publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
 
   const inputToken = findToken(inputMint);
   const outputToken = findToken(outputMint);
@@ -98,6 +104,10 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
       toast.error("Connect your wallet first");
       return;
     }
+    if (!signTransaction) {
+      toast.error("Wallet does not support signing transactions");
+      return;
+    }
     if (!quote) {
       toast.error("No quote available");
       return;
@@ -120,23 +130,84 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
 
     toast.loading("Building swap transaction…", { id });
 
-    // Demo flow: in production wire signTransaction + sendAndConfirm
-    await new Promise((r) => setTimeout(r, 1800));
+    try {
+      const swapTx = await buildSwapTransaction({
+        quoteResponse: quote,
+        userPublicKey: publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+        prioritizationFeeLamports: "auto",
+        dynamicComputeUnitLimit: true,
+      });
 
-    updateHistory(id, { status: "success", txSignature: `demo_${id}` });
-    toast.success(
-      `Swap simulated · ${numAmount.toFixed(4)} ${inputToken?.symbol} → ${outAmount.toFixed(4)} ${outputToken?.symbol}`,
-      {
+      const txBytes = Uint8Array.from(
+        atob(swapTx.swapTransaction),
+        (c) => c.charCodeAt(0),
+      );
+      const tx = VersionedTransaction.deserialize(txBytes);
+
+      toast.loading("Awaiting wallet signature…", { id });
+      const signed = await signTransaction(tx);
+
+      toast.loading("Broadcasting transaction…", { id });
+      const signature = await connection.sendRawTransaction(signed.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      updateHistory(id, { status: "pending", txSignature: signature });
+      toast.loading("Confirming on-chain…", {
         id,
-        description: "Demo mode — transaction not broadcast.",
+        description: signature.slice(0, 12) + "…",
+      });
+
+      const latest = await connection.getLatestBlockhash("confirmed");
+      const conf = await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: latest.blockhash,
+          lastValidBlockHeight: swapTx.lastValidBlockHeight,
+        },
+        "confirmed",
+      );
+
+      if (conf.value.err) {
+        updateHistory(id, { status: "failed", txSignature: signature });
+        toast.error("Swap failed on-chain", {
+          id,
+          description: JSON.stringify(conf.value.err),
+        });
+      } else {
+        updateHistory(id, { status: "success", txSignature: signature });
+        toast.success(
+          `Swap complete · ${numAmount.toFixed(4)} ${inputToken?.symbol} → ${outAmount.toFixed(4)} ${outputToken?.symbol}`,
+          {
+            id,
+            description: signature.slice(0, 12) + "…",
+            action: {
+              label: "View",
+              onClick: () =>
+                window.open(`https://solscan.io/tx/${signature}`, "_blank"),
+            },
+          },
+        );
+        pushNotification({
+          title: "Swap complete",
+          description: `${numAmount.toFixed(4)} ${inputToken?.symbol} → ${outAmount.toFixed(4)} ${outputToken?.symbol} · ${signature.slice(0, 8)}…`,
+          type: "success",
+        });
       }
-    );
-    pushNotification({
-      title: "Swap simulated",
-      description: `${numAmount.toFixed(4)} ${inputToken?.symbol} → ${outAmount.toFixed(4)} ${outputToken?.symbol}`,
-      type: "success",
-    });
-    setIsExecuting(false);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      updateHistory(id, { status: "failed" });
+      toast.error("Swap aborted", { id, description: msg });
+      pushNotification({
+        title: "Swap failed",
+        description: msg.slice(0, 140),
+        type: "error",
+      });
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   return (
@@ -267,7 +338,7 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
             {isExecuting ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Simulating swap…
+                Confirming swap…
               </>
             ) : !quote ? (
               "Enter an amount"
