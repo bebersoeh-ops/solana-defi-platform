@@ -29,9 +29,14 @@ import {
   calcOutputAmount,
 } from "@/lib/jupiter";
 import { useDebounced } from "@/hooks/use-debounced";
+import { useTokenBalance } from "@/hooks/use-token-balance";
+import { SOL_MINT } from "@/lib/constants";
 import { cn, formatNumber, generateId } from "@/lib/utils";
 import { SwapSettingsPanel } from "./swap-settings";
 import { RoutePreview } from "./route-preview";
+
+// Leave a small SOL reserve for tx fees / rent when the user clicks Max on SOL.
+const SOL_FEE_RESERVE = 0.01;
 
 const WalletMultiButton = dynamic(
   () =>
@@ -57,6 +62,12 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
 
   const inputToken = findToken(inputMint);
   const outputToken = findToken(outputMint);
+
+  const inputBalance = useTokenBalance(connected ? inputMint : null);
+  const usableBalance =
+    inputMint === SOL_MINT
+      ? Math.max(0, inputBalance.amount - SOL_FEE_RESERVE)
+      : inputBalance.amount;
 
   const debouncedAmount = useDebounced(inputAmount, 400);
   const numAmount = parseFloat(debouncedAmount || "0");
@@ -87,6 +98,15 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
 
   const rate = numAmount > 0 ? outAmount / numAmount : 0;
 
+  const insufficient =
+    connected && inputBalance.hasLoaded && numAmount > inputBalance.amount;
+  const wouldExceedReserve =
+    connected &&
+    inputBalance.hasLoaded &&
+    !insufficient &&
+    inputMint === SOL_MINT &&
+    numAmount > usableBalance;
+
   const [isExecuting, setIsExecuting] = useState(false);
   const [secondsAgo, setSecondsAgo] = useState(0);
 
@@ -110,6 +130,15 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
     }
     if (!quote) {
       toast.error("No quote available");
+      return;
+    }
+    if (inputBalance.hasLoaded && numAmount > inputBalance.amount) {
+      toast.error(
+        `Insufficient ${inputToken?.symbol ?? "balance"} — you have ${formatNumber(
+          inputBalance.amount,
+          6,
+        )}.`,
+      );
       return;
     }
     setIsExecuting(true);
@@ -234,6 +263,13 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
           excludeMint={outputMint}
           amount={inputAmount}
           onAmountChange={setInputAmount}
+          balance={connected ? inputBalance.amount : null}
+          balanceLoading={inputBalance.loading && !inputBalance.hasLoaded}
+          onMax={
+            connected && usableBalance > 0
+              ? () => setInputAmount(usableBalance.toString())
+              : undefined
+          }
         />
 
         <div className="relative -my-1">
@@ -332,7 +368,13 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
             size="xl"
             variant="gradient"
             className="w-full"
-            disabled={!quote || isExecuting || numAmount <= 0}
+            disabled={
+              !quote ||
+              isExecuting ||
+              numAmount <= 0 ||
+              insufficient ||
+              wouldExceedReserve
+            }
             onClick={handleSwap}
           >
             {isExecuting ? (
@@ -340,6 +382,10 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
                 <Loader2 className="size-4 animate-spin" />
                 Confirming swap…
               </>
+            ) : insufficient ? (
+              `Insufficient ${inputToken?.symbol ?? "balance"}`
+            ) : wouldExceedReserve ? (
+              `Leave ${SOL_FEE_RESERVE} SOL for fees`
             ) : !quote ? (
               "Enter an amount"
             ) : (
@@ -385,6 +431,9 @@ function SideBox({
   onAmountChange,
   readOnly,
   loading,
+  balance,
+  balanceLoading,
+  onMax,
 }: {
   label: string;
   tokenMint: string;
@@ -394,7 +443,16 @@ function SideBox({
   onAmountChange?: (v: string) => void;
   readOnly?: boolean;
   loading?: boolean;
+  balance?: number | null;
+  balanceLoading?: boolean;
+  onMax?: () => void;
 }) {
+  const balanceLabel =
+    balance == null
+      ? "—"
+      : balanceLoading
+        ? "loading…"
+        : formatNumber(balance, balance < 1 ? 6 : 4);
   return (
     <motion.div
       whileFocus={{ scale: 1.01 }}
@@ -402,7 +460,18 @@ function SideBox({
     >
       <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-1.5">
         <span>{label}</span>
-        <span>Balance: —</span>
+        <span className="flex items-center gap-2">
+          <span>Balance: {balanceLabel}</span>
+          {onMax ? (
+            <button
+              type="button"
+              onClick={onMax}
+              className="text-[10px] uppercase tracking-wider rounded-md border border-white/10 bg-white/[0.03] px-1.5 py-0.5 hover:border-primary/40 hover:text-foreground transition-colors"
+            >
+              Max
+            </button>
+          ) : null}
+        </span>
       </div>
       <div className="flex items-center justify-between gap-3">
         <input
