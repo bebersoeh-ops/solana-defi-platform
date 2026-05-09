@@ -13,8 +13,9 @@ import { useSwapStore } from "@/store/swap-store";
 import { useTokenStore } from "@/store/token-store";
 import {
   looksLikeSolanaAddress,
-  resolveTokenByMint,
+  resolveTokenWithDiagnostics,
   searchJupiterTokens,
+  type ResolveFailure,
   type ResolvedTokenMeta,
 } from "@/lib/token-resolver";
 import type { Token } from "@/lib/types";
@@ -43,7 +44,7 @@ export function TokenSelect({
 
   const [resolved, setResolved] = useState<ResolvedTokenMeta | null>(null);
   const [resolving, setResolving] = useState(false);
-  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [resolveFailure, setResolveFailure] = useState<ResolveFailure | null>(null);
 
   const [searchHits, setSearchHits] = useState<ResolvedTokenMeta[]>([]);
   const [searching, setSearching] = useState(false);
@@ -51,23 +52,26 @@ export function TokenSelect({
   // Resolve a single mint when the user pastes a Solana address.
   useEffect(() => {
     setResolved(null);
-    setResolveError(null);
+    setResolveFailure(null);
     if (!isMint) return;
     if (findToken(trimmed) || dynamicTokens[trimmed]) return;
     const ctrl = new AbortController();
     setResolving(true);
     (async () => {
       try {
-        const t = await resolveTokenByMint(trimmed, ctrl.signal);
+        const out = await resolveTokenWithDiagnostics(trimmed, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        if (t) {
-          setResolved(t);
+        if (out.ok) {
+          setResolved(out.token);
         } else {
-          setResolveError("Address not recognized by Jupiter token graph");
+          setResolveFailure(out.failure);
         }
       } catch (e) {
         if (ctrl.signal.aborted) return;
-        setResolveError(e instanceof Error ? e.message : "Lookup failed");
+        setResolveFailure({
+          reason: "network-error",
+          message: e instanceof Error ? e.message : "Lookup failed",
+        });
       } finally {
         if (!ctrl.signal.aborted) setResolving(false);
       }
@@ -200,7 +204,7 @@ export function TokenSelect({
                 mint={trimmed}
                 resolved={resolved}
                 resolving={resolving}
-                error={resolveError}
+                failure={resolveFailure}
                 onPick={handlePick}
               />
             )}
@@ -352,13 +356,13 @@ function ResolveBanner({
   mint,
   resolved,
   resolving,
-  error,
+  failure,
   onPick,
 }: {
   mint: string;
   resolved: ResolvedTokenMeta | null;
   resolving: boolean;
-  error: string | null;
+  failure: ResolveFailure | null;
   onPick: (mint: string, meta?: Token) => void;
 }) {
   if (resolving) {
@@ -375,18 +379,28 @@ function ResolveBanner({
     );
   }
 
-  if (error || !resolved) {
+  if (failure || !resolved) {
+    const title =
+      failure?.reason === "not-a-token"
+        ? "Not a token mint"
+        : failure?.reason === "invalid-format"
+          ? "Invalid Solana address"
+          : "Could not resolve this address";
+    const message =
+      failure?.message ??
+      "Jupiter, DexScreener, and the on-chain Metaplex registry don't know this mint.";
     return (
       <div className="m-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-sm">
         <div className="flex items-start gap-2">
           <ShieldAlert className="size-4 text-amber-400 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-amber-200">
-              Could not resolve this address
-            </div>
-            <div className="text-[11px] text-amber-300/80 mt-0.5">
-              {error ?? "Jupiter doesn't track this mint yet."}
-            </div>
+            <div className="font-medium text-amber-200">{title}</div>
+            <div className="text-[11px] text-amber-300/80 mt-0.5">{message}</div>
+            {failure?.owner && (
+              <div className="text-[10px] font-mono text-amber-300/60 mt-1 truncate">
+                Owner: {failure.owner}
+              </div>
+            )}
             <div className="text-[10px] font-mono text-muted-foreground mt-1 truncate">
               {mint}
             </div>
@@ -396,16 +410,28 @@ function ResolveBanner({
     );
   }
 
+  const sourceLabel: Record<ResolvedTokenMeta["source"], string> = {
+    static: "verified list",
+    jupiter: "Jupiter graph",
+    dexscreener: "DexScreener",
+    onchain: "on-chain metadata",
+  };
+
   return (
     <div className="m-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
       <div className="flex items-center gap-3">
         <TokenIcon src={resolved.logoURI} symbol={resolved.symbol} size={36} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-base">{resolved.symbol}</span>
-            <Badge variant="outline" className="text-[9px] py-0">
-              <ShieldAlert className="size-2.5" />
-              unverified
+            {!resolved.verified && (
+              <Badge variant="outline" className="text-[9px] py-0">
+                <ShieldAlert className="size-2.5" />
+                unverified
+              </Badge>
+            )}
+            <Badge variant="secondary" className="text-[9px] py-0">
+              {sourceLabel[resolved.source]}
             </Badge>
             {resolved.organicScore !== undefined && (
               <Badge variant="secondary" className="text-[9px] py-0">
@@ -442,6 +468,11 @@ function ResolveBanner({
           {resolved.holderCount !== undefined && (
             <Stat label="Holders" value={formatNumber(resolved.holderCount, 0)} />
           )}
+        </div>
+      )}
+      {resolved.source === "onchain" && resolved.liquidityUsd === undefined && (
+        <div className="mt-2 text-[10px] text-amber-300/80">
+          Resolved via on-chain metadata only — no DEX liquidity detected, so Jupiter swap may fail.
         </div>
       )}
       <div className="mt-2 text-[10px] text-amber-300/80">
