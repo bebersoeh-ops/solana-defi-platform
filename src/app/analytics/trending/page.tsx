@@ -1,25 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
 import { SectionShell } from "@/components/shell/section-shell";
-import { SECTIONS } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { TokenIcon } from "@/components/shared/token-icon";
 import { Sparkline } from "@/components/ui/sparkline";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Flame } from "lucide-react";
-import { getMockTrendingTokens } from "@/lib/mock-data";
+import { useMarketTokens } from "@/hooks/use-market-tokens";
 import { cn, formatNumber, formatPrice } from "@/lib/utils";
 
 export default function TrendingPage() {
-  const section = SECTIONS.find((s) => s.href === "/analytics")!;
-  const tokens = useMemo(() => getMockTrendingTokens(), []);
+  const { tokens: live, isLoading, lastUpdated } = useMarketTokens();
+  const tokens = [...live].sort((a, b) => b.volume24h - a.volume24h);
 
   return (
     <SectionShell
       title="Trending Tokens"
       description="Top movers and most-routed pairs across Jupiter in the last 24h."
-      badge="Live"
+      badge={lastUpdated ? "Live" : "Loading"}
       baseHref="/analytics"
     >
       <Card>
@@ -46,6 +44,20 @@ export default function TrendingPage() {
                 </tr>
               </thead>
               <tbody>
+                {isLoading && tokens.length === 0
+                  ? Array.from({ length: 8 }).map((_, i) => (
+                      <tr key={`skel-${i}`} className="border-b border-white/[0.03]">
+                        <td className="px-5 py-3"><Skeleton className="h-4 w-6" /></td>
+                        <td className="px-2 py-3"><Skeleton className="h-6 w-28" /></td>
+                        <td className="px-2 py-3 text-right"><Skeleton className="ml-auto h-4 w-14" /></td>
+                        <td className="px-2 py-3 text-right"><Skeleton className="ml-auto h-4 w-12" /></td>
+                        <td className="px-2 py-3 text-right hidden sm:table-cell"><Skeleton className="ml-auto h-4 w-16" /></td>
+                        <td className="px-2 py-3 text-right hidden md:table-cell"><Skeleton className="ml-auto h-4 w-16" /></td>
+                        <td className="px-2 py-3 text-right hidden lg:table-cell"><Skeleton className="ml-auto h-4 w-12" /></td>
+                        <td className="px-5 py-3 text-right"><Skeleton className="ml-auto h-7 w-20" /></td>
+                      </tr>
+                    ))
+                  : null}
                 {tokens.map((t, i) => (
                   <tr key={t.address} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                     <td className="px-5 py-2.5 text-muted-foreground font-mono">{i + 1}</td>

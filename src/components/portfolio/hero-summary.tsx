@@ -7,17 +7,27 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getMockPortfolioAssets, getMockPnlSeries } from "@/lib/mock-data";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { formatNumber, formatUsd } from "@/lib/utils";
+import { formatUsd } from "@/lib/utils";
 import { usePortfolioStore } from "@/store/portfolio-store";
+import { useWalletTokens } from "@/hooks/use-wallet-tokens";
 
 export function PortfolioHeroSummary() {
   const privacy = usePortfolioStore((s) => s.privacyMode);
-  const assets = useMemo(() => getMockPortfolioAssets(), []);
+  const wallet = useWalletTokens();
+  const assets = useMemo(
+    () =>
+      wallet.isConnected && wallet.assets.length > 0
+        ? wallet.assets
+        : getMockPortfolioAssets(),
+    [wallet.isConnected, wallet.assets],
+  );
   const series = useMemo(() => getMockPnlSeries(30), []);
 
-  const total = assets.reduce((s, a) => s + a.value, 0);
-  const change = series[series.length - 1].value - series[0].value;
-  const changePct = (change / series[0].value) * 100;
+  const total = wallet.isConnected ? wallet.totalValue : assets.reduce((s, a) => s + a.value, 0);
+  const change24hPct = wallet.isConnected && assets.length > 0
+    ? assets.reduce((sum, a) => sum + (a.allocation / 100) * a.change24h, 0)
+    : (series[series.length - 1].value - series[0].value) / series[0].value * 100;
+  const change24hAbs = (total * change24hPct) / 100;
 
   const display = (n: number) => (privacy ? "•••••" : formatUsd(n));
 
@@ -32,10 +42,14 @@ export function PortfolioHeroSummary() {
                 <Lock className="size-2.5" />
                 PRIVATE
               </Badge>
-            ) : (
-              <Badge variant="info" className="text-[9px]">
+            ) : wallet.isConnected ? (
+              <Badge variant="live" className="text-[9px]">
                 <Eye className="size-2.5" />
                 LIVE
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-[9px]">
+                DEMO
               </Badge>
             )}
           </div>
@@ -47,18 +61,18 @@ export function PortfolioHeroSummary() {
             {display(total)}
           </motion.div>
           <div
-            className={`text-sm font-medium ${change >= 0 ? "text-emerald-400" : "text-rose-400"}`}
+            className={`text-sm font-medium ${change24hPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}
           >
             {privacy
               ? "•••"
-              : `${change >= 0 ? "+" : ""}${formatUsd(change)} (${changePct.toFixed(2)}%) · 30d`}
+              : `${change24hPct >= 0 ? "+" : ""}${formatUsd(change24hAbs)} (${change24hPct.toFixed(2)}%) · 24h`}
           </div>
           <div className="grid grid-cols-3 gap-2 pt-3">
             <Mini label="Tokens" value={String(assets.length)} />
             <Mini label="Largest" value={`${assets[0]?.symbol ?? "—"}`} />
             <Mini
               label="24h"
-              value={`${(Math.random() * 6 - 2).toFixed(2)}%`}
+              value={`${change24hPct >= 0 ? "+" : ""}${change24hPct.toFixed(2)}%`}
             />
           </div>
         </div>

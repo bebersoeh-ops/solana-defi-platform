@@ -2,24 +2,31 @@
 
 import { useMemo, useState } from "react";
 import { SectionShell } from "@/components/shell/section-shell";
-import { SECTIONS } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TokenIcon } from "@/components/shared/token-icon";
 import { getMockPortfolioAssets } from "@/lib/mock-data";
 import { Coins, Search } from "lucide-react";
 import { cn, formatNumber, formatUsd } from "@/lib/utils";
 import { usePortfolioStore } from "@/store/portfolio-store";
+import { useWalletTokens } from "@/hooks/use-wallet-tokens";
 import { PortfolioHeroSummary } from "@/components/portfolio/hero-summary";
 
 export default function AssetsPage() {
-  const section = SECTIONS.find((s) => s.href === "/portfolio")!;
   const [q, setQ] = useState("");
   const hideSmall = usePortfolioStore((s) => s.hideSmallBalances);
   const setHideSmall = usePortfolioStore((s) => s.setHideSmallBalances);
+  const wallet = useWalletTokens();
 
-  const all = useMemo(() => getMockPortfolioAssets(), []);
+  const all = useMemo(
+    () =>
+      wallet.isConnected && wallet.assets.length > 0
+        ? wallet.assets
+        : getMockPortfolioAssets(),
+    [wallet.isConnected, wallet.assets],
+  );
   const filtered = useMemo(
     () =>
       all.filter((a) => {
@@ -34,7 +41,7 @@ export default function AssetsPage() {
     <SectionShell
       title="Assets"
       description="All token holdings across your tracked wallets."
-      badge={`${all.length} tokens`}
+      badge={wallet.isConnected ? `${all.length} tokens · live` : `${all.length} tokens · demo`}
       baseHref="/portfolio"
     >
       <div className="space-y-5">
@@ -56,7 +63,13 @@ export default function AssetsPage() {
                 </div>
               </div>
             </div>
-            <CardDescription>Mock data shown when no wallet is connected.</CardDescription>
+            <CardDescription>
+              {wallet.isConnected
+                ? wallet.isLoading && wallet.assets.length === 0
+                  ? "Fetching balances from Solana RPC…"
+                  : "Live SPL balances · prices via Jupiter & DexScreener · refreshes every 60s"
+                : "Connect a wallet to view your real holdings — demo data shown."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="px-0">
             <div className="overflow-x-auto">

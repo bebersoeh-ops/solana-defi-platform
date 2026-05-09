@@ -16,6 +16,20 @@ export function formatNumber(value: number, decimals = 2): string {
   return value.toFixed(decimals);
 }
 
+/**
+ * Compact number with smarter decimal precision than `formatNumber`:
+ * 1.23B / 4.5M / 12K / 800.
+ */
+export function formatCompact(value: number): string {
+  if (!isFinite(value) || value === 0) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  if (abs >= 1) return value.toFixed(0);
+  return value.toFixed(2);
+}
+
 export function formatUsd(value: number, decimals = 2): string {
   return `$${formatNumber(value, decimals)}`;
 }

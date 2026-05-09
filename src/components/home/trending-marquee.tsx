@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
 import { TrendingDown, TrendingUp } from "lucide-react";
+import { useMarketTokens } from "@/hooks/use-market-tokens";
 import { getMockTrendingTokens } from "@/lib/mock-data";
 import { cn, formatPrice } from "@/lib/utils";
 
 export function TrendingMarquee() {
-  const tokens = useMemo(() => getMockTrendingTokens(), []);
+  const { tokens: live, isLoading } = useMarketTokens();
+  const tokens = !isLoading && live.length > 0 ? live : getMockTrendingTokens();
   const repeated = [...tokens, ...tokens];
 
   return (
