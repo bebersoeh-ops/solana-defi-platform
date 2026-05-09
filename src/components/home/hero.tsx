@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, Sparkles, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 
@@ -40,19 +40,21 @@ export function Hero() {
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
-            <Button asChild size="xl" variant="gradient">
-              <Link href="/trade/swap">
-                <Zap className="size-4" />
-                Open swap terminal
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-            <Button asChild size="xl" variant="glass">
-              <Link href="/portfolio/overview">
-                Explore portfolio
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
+            <Link
+              href="/trade/swap"
+              className={buttonVariants({ size: "xl", variant: "gradient" })}
+            >
+              <Zap className="size-4" />
+              Open swap terminal
+              <ArrowRight className="size-4" />
+            </Link>
+            <Link
+              href="/portfolio/overview"
+              className={buttonVariants({ size: "xl", variant: "glass" })}
+            >
+              Explore portfolio
+              <ArrowRight className="size-4" />
+            </Link>
           </div>
 
           <div className="mt-10 flex items-center gap-5 text-xs text-muted-foreground">
