@@ -1,42 +1,152 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SectionShell } from "@/components/shell/section-shell";
-import { SECTIONS } from "@/lib/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Layers, Waves } from "lucide-react";
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Cell } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Layers, Waves, Info } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
+import {
+  aggregateByDex,
+  fetchAllPairsForMints,
+  type DexAggregate,
+} from "@/lib/market-data";
+import { getQuote } from "@/lib/jupiter";
+import { SOL_MINT, USDC_MINT } from "@/lib/constants";
+
+interface DepthPoint {
+  size: number;
+  amountIn: number;
+  outAmount: number;
+  priceImpactPct: number;
+  marginalPrice: number;
+}
+
+const SIZE_LADDER_SOL = [0.1, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
+
+const DEX_PALETTE = [
+  "hsl(var(--neon-mint))",
+  "hsl(var(--neon-blue))",
+  "hsl(var(--neon-purple))",
+  "hsl(var(--neon-pink))",
+  "hsl(var(--neon-orange))",
+  "rgba(255,255,255,0.32)",
+];
 
 export default function LiquidityVizPage() {
-  const section = SECTIONS.find((s) => s.href === "/trade")!;
-  const data = useMemo(() => {
-    const out: Array<{ p: string; l: number; bin: number }> = [];
-    for (let i = -25; i <= 25; i++) {
-      const x = 180 + i * 0.5;
-      const center = Math.exp(-(i * i) / 80) * 1500;
-      const noise = Math.random() * 200;
-      out.push({ p: x.toFixed(2), l: Math.max(50, center + noise), bin: i });
-    }
-    return out;
+  const [agg, setAgg] = useState<DexAggregate[]>([]);
+  const [aggError, setAggError] = useState<string | null>(null);
+  const [aggLoading, setAggLoading] = useState(true);
+
+  const [depth, setDepth] = useState<DepthPoint[]>([]);
+  const [depthError, setDepthError] = useState<string | null>(null);
+  const [depthLoading, setDepthLoading] = useState(true);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let cancelled = false;
+    (async () => {
+      setAggLoading(true);
+      setAggError(null);
+      try {
+        const pairs = await fetchAllPairsForMints(
+          [SOL_MINT, USDC_MINT],
+          ctrl.signal,
+        );
+        if (cancelled) return;
+        setAgg(aggregateByDex(pairs).slice(0, 8));
+      } catch (e) {
+        if (cancelled) return;
+        setAggError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setAggLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+    };
   }, []);
 
-  const dexes = useMemo(
-    () => [
-      { name: "Raydium CLMM", share: 32, color: "hsl(var(--neon-mint))" },
-      { name: "Orca Whirlpool", share: 24, color: "hsl(var(--neon-blue))" },
-      { name: "Phoenix v2", share: 18, color: "hsl(var(--neon-purple))" },
-      { name: "Meteora DLMM", share: 14, color: "hsl(var(--neon-pink))" },
-      { name: "Lifinity v2", share: 8, color: "hsl(var(--neon-orange))" },
-      { name: "Other", share: 4, color: "rgba(255,255,255,0.2)" },
-    ],
-    []
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setDepthLoading(true);
+      setDepthError(null);
+      try {
+        const SOL_DECIMALS = 9;
+        const USDC_DECIMALS = 6;
+        const results = await Promise.all(
+          SIZE_LADDER_SOL.map(async (size) => {
+            const lamports = Math.floor(size * Math.pow(10, SOL_DECIMALS));
+            try {
+              const quote = await getQuote({
+                inputMint: SOL_MINT,
+                outputMint: USDC_MINT,
+                amount: lamports,
+                slippageBps: 50,
+              });
+              const outAmount = Number(quote.outAmount) / Math.pow(10, USDC_DECIMALS);
+              const impact = Number(quote.priceImpactPct ?? 0) * 100;
+              const marginal = outAmount / size;
+              return {
+                size,
+                amountIn: size,
+                outAmount,
+                priceImpactPct: impact,
+                marginalPrice: marginal,
+              };
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (cancelled) return;
+        const ok = results.filter((r): r is DepthPoint => r !== null);
+        setDepth(ok);
+      } catch (e) {
+        if (cancelled) return;
+        setDepthError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setDepthLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const totalLiq = useMemo(() => agg.reduce((s, d) => s + d.liquidity, 0), [agg]);
+  const dexShares = useMemo(
+    () =>
+      agg.map((d, i) => ({
+        name: d.dexId,
+        liquidityUsd: d.liquidity,
+        volume24h: d.volume24h,
+        share: totalLiq > 0 ? (d.liquidity / totalLiq) * 100 : 0,
+        color: DEX_PALETTE[i % DEX_PALETTE.length],
+      })),
+    [agg, totalLiq],
   );
+
+  const liveBadge =
+    !aggLoading && !depthLoading && agg.length > 0 && depth.length > 0
+      ? `Live · SOL/USDC · ${agg.length} DEXes`
+      : "Loading…";
 
   return (
     <SectionShell
       title="Liquidity Visualizer"
-      description="Visualize concentrated liquidity across price ranges and the AMM mix routing your trade."
-      badge="Demo · SOL/USDC"
+      description="Real on-chain liquidity for SOL/USDC: depth via Jupiter route impact across order sizes, AMM mix from DexScreener pair aggregation."
+      badge={liveBadge}
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -44,62 +154,128 @@ export default function LiquidityVizPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Waves className="size-4 text-primary" />
-              Liquidity by price (SOL/USDC)
+              Depth · SOL → USDC price impact
             </CardTitle>
-            <CardDescription>Concentrated liquidity bins · simulated</CardDescription>
+            <CardDescription>
+              Live Jupiter route impact at increasing SOL trade sizes. Bar
+              height = % impact. Higher means thinner liquidity at that size.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="h-[420px] pl-1 pr-3 pb-3">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data}>
-                <XAxis dataKey="p" tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }} />
-                <YAxis tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }} />
-                <Tooltip
-                  contentStyle={{
-                    background: "rgba(10,12,18,0.95)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    borderRadius: 10,
-                    fontSize: 11,
-                  }}
-                />
-                <Bar dataKey="l" radius={[3, 3, 0, 0]}>
-                  {data.map((d) => (
-                    <Cell
-                      key={d.p}
-                      fill={d.bin === 0 ? "hsl(var(--neon-mint))" : "rgba(126,238,179,0.45)"}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <CardContent className="h-96 pl-1 pr-3 pb-3">
+            {depthLoading ? (
+              <Skeleton className="h-full w-full" />
+            ) : depthError ? (
+              <ErrorBanner message={depthError} />
+            ) : depth.length === 0 ? (
+              <Empty />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={depth} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                  <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis
+                    dataKey="size"
+                    tickFormatter={(v: number) => (v >= 1 ? `${v} SOL` : `${v}`)}
+                    tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+                  />
+                  <YAxis
+                    tickFormatter={(v: number) => `${v.toFixed(2)}%`}
+                    tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "rgba(10,12,18,0.95)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 10,
+                      fontSize: 11,
+                    }}
+                    formatter={(value, name, item) => {
+                      if (name === "priceImpactPct") {
+                        return [`${(value as number).toFixed(3)}%`, "Price impact"];
+                      }
+                      const p = item.payload as DepthPoint;
+                      return [
+                        `${p.outAmount.toFixed(2)} USDC @ $${p.marginalPrice.toFixed(2)}`,
+                        "Receive",
+                      ];
+                    }}
+                    labelFormatter={(v) => `Trade size: ${v} SOL`}
+                  />
+                  <Bar
+                    dataKey="priceImpactPct"
+                    radius={[4, 4, 0, 0]}
+                    fill="hsl(var(--neon-mint))"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Layers className="size-4 text-primary" />
-              AMM mix
+              AMM mix · SOL/USDC
             </CardTitle>
-            <CardDescription>Share of liquidity by DEX</CardDescription>
+            <CardDescription>
+              Share of TVL by DEX for the SOL ↔ USDC pair (DexScreener).
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {dexes.map((d) => (
-              <div key={d.name}>
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="font-medium">{d.name}</span>
-                  <span className="text-muted-foreground font-mono">{d.share}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
-                  <div className="h-full" style={{ width: `${d.share}%`, background: d.color }} />
-                </div>
+            {aggLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Skeleton key={i} className="h-7 w-full" />
+                ))}
               </div>
-            ))}
-            <div className="pt-2 text-[11px] text-muted-foreground rounded-lg border border-dashed border-white/10 px-3 py-2">
-              Distribution refreshes every 30s based on Jupiter's quoter. Demo
-              data shown when offline.
-            </div>
+            ) : aggError ? (
+              <ErrorBanner message={aggError} />
+            ) : dexShares.length === 0 ? (
+              <Empty />
+            ) : (
+              <>
+                {dexShares.map((d) => (
+                  <div key={d.name}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="font-medium capitalize">{d.name}</span>
+                      <span className="text-muted-foreground font-mono">
+                        ${(d.liquidityUsd / 1_000_000).toFixed(2)}M · {d.share.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+                      <div
+                        className="h-full"
+                        style={{ width: `${d.share}%`, background: d.color }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-2 text-[11px] text-muted-foreground rounded-lg border border-dashed border-white/10 px-3 py-2">
+                  Aggregated from DexScreener pairs for SOL & USDC. Refresh on
+                  reload.
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
     </SectionShell>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 px-3 py-2 text-xs text-rose-300 flex items-start gap-2 m-2">
+      <Info className="size-3.5 mt-0.5 shrink-0" />
+      <span className="break-all">{message}</span>
+    </div>
+  );
+}
+
+function Empty() {
+  return (
+    <div className="text-xs text-muted-foreground p-4">
+      No data returned. Try again later.
+    </div>
   );
 }
