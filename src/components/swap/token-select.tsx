@@ -12,7 +12,7 @@ import { cn, formatNumber } from "@/lib/utils";
 import { useSwapStore } from "@/store/swap-store";
 import { useTokenStore } from "@/store/token-store";
 import {
-  looksLikeSolanaAddress,
+  looksLikeAddressInput,
   resolveTokenWithDiagnostics,
   searchJupiterTokens,
   type ResolveFailure,
@@ -40,7 +40,7 @@ export function TokenSelect({
   const token = findToken(value) ?? dynamicTokens[value];
 
   const trimmed = query.trim();
-  const isMint = useMemo(() => looksLikeSolanaAddress(trimmed), [trimmed]);
+  const isMint = useMemo(() => looksLikeAddressInput(trimmed), [trimmed]);
 
   const [resolved, setResolved] = useState<ResolvedTokenMeta | null>(null);
   const [resolving, setResolving] = useState(false);

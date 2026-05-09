@@ -3,14 +3,25 @@ import { findToken } from "./tokens";
 import { fetchOnChainMintInfo, fetchMetaplexMetadata } from "./onchain-token";
 
 /**
- * Solana mint addresses are base58 encoded ed25519 public keys, between 32 and
- * 44 characters in practice. Strict regex avoids false-positives on partial
- * symbol input.
+ * Solana mint addresses are base58-encoded ed25519 public keys, between 32 and
+ * 44 characters. Base58 forbids the visually ambiguous characters `0`, `O`,
+ * `I`, and `l`.
  */
 const SOL_ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
+/**
+ * Anything that *looks* like an address-shaped paste — 32–44 alphanumeric
+ * characters. Used to trigger the resolve banner even when the input violates
+ * strict base58 (so the UI can tell the user *why* it can't resolve).
+ */
+const SOL_ADDRESS_LOOSE_RE = /^[A-Za-z0-9]{32,44}$/;
+
 export function looksLikeSolanaAddress(input: string): boolean {
   return SOL_ADDRESS_RE.test(input.trim());
+}
+
+export function looksLikeAddressInput(input: string): boolean {
+  return SOL_ADDRESS_LOOSE_RE.test(input.trim());
 }
 
 export type ResolveSource =
@@ -98,6 +109,19 @@ export async function resolveTokenWithDiagnostics(
 ): Promise<ResolveOutcome> {
   const trimmed = mint.trim();
   if (!looksLikeSolanaAddress(trimmed)) {
+    if (looksLikeAddressInput(trimmed)) {
+      const bad = trimmed.match(/[0OIl]/g);
+      const detail = bad
+        ? ` Spotted character${bad.length > 1 ? "s" : ""} that base58 doesn't allow: ${[...new Set(bad)].join(", ")}.`
+        : "";
+      return {
+        ok: false,
+        failure: {
+          reason: "invalid-format",
+          message: `That looks like an address, but it isn't valid base58.${detail} Solana mints are case-sensitive — recopy the original (likely mixed-case) value.`,
+        },
+      };
+    }
     return {
       ok: false,
       failure: {
