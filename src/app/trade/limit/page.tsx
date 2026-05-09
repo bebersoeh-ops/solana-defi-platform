@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TokenSelect } from "@/components/swap/token-select";
 import { SOL_MINT, USDC_MINT } from "@/lib/constants";
-import { findToken } from "@/lib/tokens";
+import { useToken, useTokenLookup } from "@/hooks/use-token";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import {
   cancelTriggerOrder,
@@ -65,8 +65,9 @@ export default function LimitPage() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [marketPrice, setMarketPrice] = useState<number | null>(null);
 
-  const inputToken = findToken(inputMint);
-  const outputToken = findToken(outputMint);
+  const inputToken = useToken(inputMint);
+  const outputToken = useToken(outputMint);
+  const lookup = useTokenLookup();
 
   const balance = useTokenBalance(connected ? inputMint : null);
 
@@ -495,8 +496,8 @@ export default function LimitPage() {
                   </thead>
                   <tbody>
                     {orders.map((o) => {
-                      const inTok = findToken(o.inputMint);
-                      const outTok = findToken(o.outputMint);
+                      const inTok = lookup(o.inputMint);
+                      const outTok = lookup(o.outputMint);
                       const inDec = inTok?.decimals ?? 0;
                       const outDec = outTok?.decimals ?? 0;
                       const sellUi = inDec

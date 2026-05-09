@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useSwapStore } from "@/store/swap-store";
 import { useUiStore } from "@/store/ui-store";
-import { findToken } from "@/lib/tokens";
+import { useToken } from "@/hooks/use-token";
 import { TokenSelect } from "./token-select";
 import { useJupiterQuote } from "@/hooks/use-jupiter-quote";
 import {
@@ -60,8 +60,8 @@ export function SwapCard({ compact = false }: { compact?: boolean }) {
   const { connected, publicKey, signTransaction } = useWallet();
   const { connection } = useConnection();
 
-  const inputToken = findToken(inputMint);
-  const outputToken = findToken(outputMint);
+  const inputToken = useToken(inputMint);
+  const outputToken = useToken(outputMint);
 
   const inputBalance = useTokenBalance(connected ? inputMint : null);
   const usableBalance =

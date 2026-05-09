@@ -3,7 +3,7 @@
 import { Star } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSwapStore } from "@/store/swap-store";
-import { findToken } from "@/lib/tokens";
+import { useTokenLookup } from "@/hooks/use-token";
 import { TokenIcon } from "@/components/shared/token-icon";
 import { useMounted } from "@/hooks/use-mounted";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,7 +13,8 @@ export function FavoriteTokens() {
   const favorites = useSwapStore((s) => s.favorites);
   const setOutputMint = useSwapStore((s) => s.setOutputMint);
 
-  const tokens = favorites.map((m) => findToken(m)).filter(Boolean);
+  const lookup = useTokenLookup();
+  const tokens = favorites.map((m) => lookup(m)).filter(Boolean);
 
   return (
     <Card>
