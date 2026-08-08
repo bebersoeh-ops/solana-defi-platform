@@ -13,8 +13,8 @@ export default function AdvancedSwapPage() {
   return (
     <SectionShell
       title="Advanced Swap"
-      description="Pro-grade execution: multi-route comparison, MEV simulation, gas tuning, and route latency telemetry."
-      badge="Pro"
+      description="Pro-grade execution: multi-route comparison, MEV simulation, gas tuning, and route latency telemetry. Swap is live; side panels are demo telemetry."
+      badge="Pro · demo telemetry"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">

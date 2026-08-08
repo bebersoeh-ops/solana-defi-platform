@@ -17,8 +17,8 @@ export default function SwapPage() {
   return (
     <SectionShell
       title="Swap"
-      description="Best-route swaps across every Solana DEX. Quotes auto-refresh every 12s."
-      badge="Live"
+      description="Best-route swaps across every Solana DEX. Quotes auto-refresh every 12s; sign with your wallet to broadcast on mainnet."
+      badge="Live · mainnet"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">

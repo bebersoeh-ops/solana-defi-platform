@@ -33,8 +33,8 @@ export default function FeeEstimatorPage() {
   return (
     <SectionShell
       title="Fee Estimator"
-      description="Estimate transaction fees, priority fees, and inclusion probability under live network load."
-      badge="Lamports"
+      description="Estimate transaction fees, priority fees, and inclusion probability. Network priority and inclusion charts are demo data."
+      badge="Demo · lamports"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

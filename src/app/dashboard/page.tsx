@@ -24,7 +24,7 @@ export default function DashboardPage() {
     <SectionShell
       title="Internal Dashboard"
       description={section.description}
-      badge="Live"
+      badge="Demo · sample telemetry"
       baseHref="/dashboard"
     >
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

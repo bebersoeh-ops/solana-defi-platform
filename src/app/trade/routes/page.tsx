@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { TokenSelect } from "@/components/swap/token-select";
 import { SOL_MINT, USDC_MINT } from "@/lib/constants";
 import { useJupiterQuote } from "@/hooks/use-jupiter-quote";
-import { findToken } from "@/lib/tokens";
+import { useToken } from "@/hooks/use-token";
 import { useDebounced } from "@/hooks/use-debounced";
 import { calcOutputAmount } from "@/lib/jupiter";
 import { Route as RouteIcon, Loader2, Cpu, Layers } from "lucide-react";
@@ -21,8 +21,8 @@ export default function RouteAnalyzerPage() {
   const [output, setOutput] = useState(USDC_MINT);
   const [amount, setAmount] = useState("1");
   const debouncedAmount = useDebounced(amount, 500);
-  const inTok = findToken(input);
-  const outTok = findToken(output);
+  const inTok = useToken(input);
+  const outTok = useToken(output);
   const num = parseFloat(debouncedAmount || "0");
 
   const { quote, loading, error } = useJupiterQuote({

@@ -29,7 +29,7 @@ export default function LogsPage() {
     <SectionShell
       title="API Logs"
       description="Recent calls to the Lumen API edge."
-      badge="Live tail"
+      badge="Demo · sample logs"
       baseHref="/dashboard"
     >
       <Card>

@@ -33,8 +33,8 @@ export default function SlippagePage() {
   return (
     <SectionShell
       title="Slippage Manager"
-      description="Tune your slippage policy per pair, network condition and order size."
-      badge="Adaptive"
+      description="Tune your slippage policy per pair, network condition and order size. Defaults persist locally; impact curve is illustrative."
+      badge="Adaptive · demo curve"
       baseHref="/trade"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

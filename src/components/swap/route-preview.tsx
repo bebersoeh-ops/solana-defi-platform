@@ -2,11 +2,12 @@
 
 import { ChevronRight, Layers } from "lucide-react";
 import type { JupiterQuoteResponse } from "@/lib/types";
-import { findToken } from "@/lib/tokens";
+import { useTokenLookup } from "@/hooks/use-token";
 import { TokenIcon } from "@/components/shared/token-icon";
 
 export function RoutePreview({ quote }: { quote: JupiterQuoteResponse }) {
   const steps = quote.routePlan ?? [];
+  const lookup = useTokenLookup();
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
       <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-2">
@@ -18,8 +19,8 @@ export function RoutePreview({ quote }: { quote: JupiterQuoteResponse }) {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         {steps.map((s, i) => {
-          const inTok = findToken(s.swapInfo.inputMint);
-          const outTok = findToken(s.swapInfo.outputMint);
+          const inTok = lookup(s.swapInfo.inputMint);
+          const outTok = lookup(s.swapInfo.outputMint);
           return (
             <div key={`${s.swapInfo.ammKey}-${i}`} className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2 py-1">

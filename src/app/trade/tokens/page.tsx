@@ -50,8 +50,8 @@ export default function TokenExplorerPage() {
   return (
     <SectionShell
       title="Token Explorer"
-      description="Browse Solana's liquid token universe. Filter, search, and pin favorites."
-      badge="14 tokens"
+      description="Browse Solana's liquid token universe. Filter, search, and pin favorites. Prices and trends shown here are demo — use Analytics for live data."
+      badge="Demo · curated list"
       baseHref="/trade"
     >
       <Card>

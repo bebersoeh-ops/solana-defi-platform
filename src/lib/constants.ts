@@ -3,8 +3,11 @@ export const APP_TAGLINE = "Solana liquidity, rewired.";
 export const APP_DESCRIPTION =
   "Lumen is a next-gen Solana DeFi terminal. Swap, analyze, and manage your portfolio with Jupiter's aggregated liquidity.";
 
+// Browser-friendly public mainnet RPC. The `api.mainnet-beta.solana.com` endpoint
+// 403s on a lot of browser origins; publicnode.com accepts CORS without a key.
+// Override with NEXT_PUBLIC_SOLANA_RPC for a paid / dedicated endpoint.
 export const SOLANA_RPC =
-  process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://api.mainnet-beta.solana.com";
+  process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://solana-rpc.publicnode.com";
 
 export const JUPITER_API_BASE =
   process.env.NEXT_PUBLIC_JUPITER_API_BASE ?? "https://lite-api.jup.ag";

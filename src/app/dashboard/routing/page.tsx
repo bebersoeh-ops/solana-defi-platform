@@ -34,7 +34,7 @@ export default function RoutingHealthPage() {
     <SectionShell
       title="Routing Health"
       description="Per-DEX latency and failure rate across the last hour."
-      badge="60m"
+      badge="Demo · sample telemetry"
       baseHref="/dashboard"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
